@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Business {
+  id           String      @id @default(uuid())
+  name         String
+  currencyCode String      @default("INR")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  receipts     Receipt[]
+  categories   Category[]
+}
+
+model Category {
+  id          String            @id @default(uuid())
+  businessId  String
+  business    Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  lineItems   ReceiptLineItem[]
+
+  @@unique([businessId, name])
+}
+
+model Receipt {
+  id                   String            @id @default(uuid())
+  businessId           String
+  business             Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  originalFilename     String
+  storageKey           String
+  mimeType             String
+  fileSize             Int
+  fileHash             String
+  vendorName           String?
+  receiptDate          String?           // YYYY-MM-DD format for exact business date
+  subtotalPaise        Int?
+  taxAmountPaise       Int?
+  totalAmountPaise     Int?
+  currencyCode         String            @default("INR")
+  status               String            @default("draft") // draft | needs_review | confirmed
+  fieldConfidence      String?           // JSON string of field-level confidence
+  reviewFlags          String?           // JSON string array of review flags
+  extractionNotes      String?
+  duplicateStatus      String            @default("none") // none | suspected | confirmed_duplicate | dismissed
+  duplicateOfReceiptId String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  confirmedAt          DateTime?
+  deletedAt            DateTime?
+
+  lineItems            ReceiptLineItem[]
+  candidateDuplicates  DuplicateCandidate[] @relation("SourceReceipt")
+  matchedDuplicates    DuplicateCandidate[] @relation("MatchedReceipt")
+
+  @@index([businessId, status])
+  @@index([fileHash])
+  @@index([vendorName])
+  @@index([receiptDate])
+}
+
+model ReceiptLineItem {
+  id             String    @id @default(uuid())
+  receiptId      String
+  receipt        Receipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  itemName       String
+  quantity       Float?
+  unit           String?
+  unitPricePaise Int?
+  lineTotalPaise Int?
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([receiptId])
+  @@index([categoryId])
+}
+
+model DuplicateCandidate {
+  id                 String    @id @default(uuid())
+  receiptId          String
+  receipt            Receipt   @relation("SourceReceipt", fields: [receiptId], references: [id], onDelete: Cascade)
+  candidateReceiptId String
+  candidateReceipt   Receipt   @relation("MatchedReceipt", fields: [candidateReceiptId], references: [id], onDelete: Cascade)
+  similarityScore    Float     @default(1.0)
+  matchReasons       String    // JSON string array of reasons
+  reviewStatus       String    @default("pending") // pending | dismissed | confirmed
+  createdAt          DateTime  @default(now())
+  reviewedAt         DateTime?
+
+  @@unique([receiptId, candidateReceiptId])
+  @@index([receiptId])
+  @@index([candidateReceiptId])
+}
