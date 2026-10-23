@@ -10,6 +10,7 @@ import { receiptRoutes } from './routes/receiptRoutes.js';
 import { analyticsRoutes } from './routes/analyticsRoutes.js';
 import { categoryRoutes } from './routes/categoryRoutes.js';
 import { exportRoutes } from './routes/exportRoutes.js';
+import { seedDemoData } from './services/seedService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,10 +56,19 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 });
 
 // Serve frontend in production
-const clientBuildPath = path.resolve(__dirname, '../../dist/client');
+const clientBuildPath = fs.existsSync(path.resolve(process.cwd(), 'dist/client'))
+  ? path.resolve(process.cwd(), 'dist/client')
+  : fs.existsSync(path.resolve(__dirname, '../client'))
+  ? path.resolve(__dirname, '../client')
+  : path.resolve(__dirname, '../../dist/client');
+
 if (fs.existsSync(clientBuildPath)) {
+  console.log(`Serving frontend static assets from: ${clientBuildPath}`);
   app.use(express.static(clientBuildPath));
-  app.get('*', (req, res) => {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path === '/health') {
+      return next();
+    }
     res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
 }
@@ -80,6 +90,13 @@ export async function initializeDatabase(): Promise<void> {
 
     await categoryRepository.seedDefaultCategories(business.id);
     console.log(`Initialized database with business: ${business.name} (${business.id})`);
+
+    // Auto-seed demonstration receipts if DB is empty
+    const receiptCount = await prisma.receipt.count({ where: { businessId: business.id } });
+    if (receiptCount === 0) {
+      console.log('Database has 0 receipts. Automatically seeding 20 synthetic Kirana records...');
+      await seedDemoData();
+    }
   } catch (err) {
     console.error('Failed to initialize business in database:', err);
   }
